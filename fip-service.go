@@ -25,7 +25,7 @@ func buildRequest(from string, fipUrl string) string {
 	path := fipUrl + "/live"
 
 	if from != "" {
-		path = fmt.Sprintf("%s?webradio=%s", fipUrl, from)
+		path = fmt.Sprintf("%s?webradio=%s", path, from)
 	}
 	return path
 }
@@ -73,7 +73,7 @@ func (f *DefaultFipService) GetCurrentSong(from string) (FipSong, error) {
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return FipSong{}, fmt.Errorf("FIP API return error status %d: %w", res.StatusCode, err)
+		return FipSong{}, fmt.Errorf("FIP API return error status %d: %s", res.StatusCode, req)
 	}
 
 	currentSong, err := buildSongFromFipAPI(res.Body)
@@ -83,3 +83,6 @@ func (f *DefaultFipService) GetCurrentSong(from string) (FipSong, error) {
 
 	return currentSong, nil
 }
+
+// https://www.radiofrance.fr/fip/api/live?webradio=fip_pop
+// https://www.radiofrance.fr/fip/api?webradio=fip_pop
