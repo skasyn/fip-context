@@ -20,8 +20,8 @@ func SetupRoutes(server *gin.Engine) {
 
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, err)
+		} else {
+			ctx.JSON(http.StatusOK, song)
 		}
-
-		ctx.JSON(http.StatusOK, song)
 	})
 }
