@@ -29,6 +29,10 @@ func buildRequest(from string, fipUrl string) string {
 	return path
 }
 
+func buildSongFromFipAPI(res io.ReadCloser) (FipSong, error) {
+	
+}
+
 func (f *DefaultFipService) GetCurrentSong(from string) (FipSong, error) {
 	var currentSong FipSong
 
@@ -40,20 +44,21 @@ func (f *DefaultFipService) GetCurrentSong(from string) (FipSong, error) {
 	}
 
 	req := buildRequest(from, fipAPI)
-	resp, err := http.Get(req)
+	res, err := http.Get(req)
 
 	if err != nil {
 		return currentSong, fmt.Errorf("error while fetching %s: %w", req, err)
 	}
+	defer res.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-
+	if res.StatusCode != http.StatusOK {
+		return currentSong, fmt.Errorf("FIP API return error status %d: %w", res.StatusCode, err)
+	}
+	
+	
 	if err != nil {
 		log.Fatalln(err)
 	}
-	//Convert the body to type string
-	sb := string(body)
-	log.Printf(sb)
 
 	return currentSong, nil
 }
