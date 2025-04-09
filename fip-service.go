@@ -4,13 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
+
+	"github.com/tidwall/gjson"
 )
 
 type FipSong struct {
-	Author string
+	Author []string
 	Name   string
 }
 
@@ -30,34 +31,54 @@ func buildRequest(from string, fipUrl string) string {
 }
 
 func buildSongFromFipAPI(res io.ReadCloser) (FipSong, error) {
-	
+	body, err := io.ReadAll(res)
+
+	if err != nil {
+		return FipSong{}, fmt.Errorf("failed to read response body: %w", err)
+	}
+	bodyParsed := gjson.ParseBytes(body)
+
+	authorsParsed := bodyParsed.Get("now.song.interpreters").Array()
+
+	if len(authorsParsed) == 0 {
+		return FipSong{}, fmt.Errorf("couldnt parse the interpreters of current song: %v", bodyParsed.Raw)
+	}
+
+	authors := make([]string, len(authorsParsed))
+	for i, authorParsed := range authorsParsed {
+		authors[i] = authorParsed.String()
+	}
+	return FipSong{
+		Author: authors,
+		Name:   bodyParsed.Get("now.song.release.title").String(),
+	}, nil
+
 }
 
 func (f *DefaultFipService) GetCurrentSong(from string) (FipSong, error) {
-	var currentSong FipSong
 
 	fipAPI, ok := os.LookupEnv("FIP_API")
 	if !ok {
-		return currentSong, errors.New("FIP_API is not set in env")
+		return FipSong{}, errors.New("FIP_API is not set in env")
 	} else if fipAPI == "" {
-		return currentSong, errors.New("FIP_API is empty")
+		return FipSong{}, errors.New("FIP_API is empty")
 	}
 
 	req := buildRequest(from, fipAPI)
 	res, err := http.Get(req)
 
 	if err != nil {
-		return currentSong, fmt.Errorf("error while fetching %s: %w", req, err)
+		return FipSong{}, fmt.Errorf("error while fetching %s: %w", req, err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return currentSong, fmt.Errorf("FIP API return error status %d: %w", res.StatusCode, err)
+		return FipSong{}, fmt.Errorf("FIP API return error status %d: %w", res.StatusCode, err)
 	}
-	
-	
+
+	currentSong, err := buildSongFromFipAPI(res.Body)
 	if err != nil {
-		log.Fatalln(err)
+		return FipSong{}, err // errors are already explicit
 	}
 
 	return currentSong, nil
