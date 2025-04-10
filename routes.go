@@ -5,8 +5,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRoutes(server *gin.Engine) {
-	fipService := NewFipService()
+func SetupRoutes(server *gin.Engine, cfg *Config) {
+	fipService := NewFipService(cfg.FIPApiURL)
 
 	server.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{

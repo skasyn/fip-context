@@ -1,12 +1,9 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-
 	"github.com/tidwall/gjson"
 )
 
@@ -19,7 +16,9 @@ type FipService interface {
 	GetCurrentSong(from string) (FipSong, error)
 }
 
-type defaultFipService struct{}
+type defaultFipService struct{
+	FIPApiURL string
+}
 
 func buildRequest(from string, fipUrl string) string {
 	path := fipUrl + "/live"
@@ -56,15 +55,7 @@ func buildSongFromFipAPI(res io.ReadCloser) (FipSong, error) {
 }
 
 func (f *defaultFipService) GetCurrentSong(from string) (FipSong, error) {
-
-	fipAPI, ok := os.LookupEnv("FIP_API")
-	if !ok {
-		return FipSong{}, errors.New("FIP_API is not set in env")
-	} else if fipAPI == "" {
-		return FipSong{}, errors.New("FIP_API is empty")
-	}
-
-	req := buildRequest(from, fipAPI)
+	req := buildRequest(from, f.FIPApiURL)
 	res, err := http.Get(req)
 
 	if err != nil {
@@ -84,8 +75,10 @@ func (f *defaultFipService) GetCurrentSong(from string) (FipSong, error) {
 	return currentSong, nil
 }
 
-func NewFipService() FipService {
-	return &defaultFipService{}
+func NewFipService(fipApiURL string) FipService {
+	return &defaultFipService{
+		FIPApiURL: fipApiURL,
+	}
 }
 
 // https://www.radiofrance.fr/fip/api/live?webradio=fip_pop
