@@ -6,7 +6,7 @@ import (
 )
 
 func SetupRoutes(server *gin.Engine) {
-	fipService := DefaultFipService{}
+	fipService := NewFipService()
 
 	server.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{

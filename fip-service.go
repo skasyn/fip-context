@@ -19,7 +19,7 @@ type FipService interface {
 	GetCurrentSong(from string) (FipSong, error)
 }
 
-type DefaultFipService struct{}
+type defaultFipService struct{}
 
 func buildRequest(from string, fipUrl string) string {
 	path := fipUrl + "/live"
@@ -55,7 +55,7 @@ func buildSongFromFipAPI(res io.ReadCloser) (FipSong, error) {
 
 }
 
-func (f *DefaultFipService) GetCurrentSong(from string) (FipSong, error) {
+func (f *defaultFipService) GetCurrentSong(from string) (FipSong, error) {
 
 	fipAPI, ok := os.LookupEnv("FIP_API")
 	if !ok {
@@ -82,6 +82,10 @@ func (f *DefaultFipService) GetCurrentSong(from string) (FipSong, error) {
 	}
 
 	return currentSong, nil
+}
+
+func NewFipService() FipService {
+	return &defaultFipService{}
 }
 
 // https://www.radiofrance.fr/fip/api/live?webradio=fip_pop
