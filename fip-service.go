@@ -8,7 +8,7 @@ import (
 )
 
 type FipSong struct {
-	Author []string
+	Interpreters []string
 	Name   string
 }
 
@@ -37,18 +37,18 @@ func buildSongFromFipAPI(res io.ReadCloser) (FipSong, error) {
 	}
 	bodyParsed := gjson.ParseBytes(body)
 
-	authorsParsed := bodyParsed.Get("now.song.interpreters").Array()
+	interpretersParsed := bodyParsed.Get("now.song.interpreters").Array()
 
-	if len(authorsParsed) == 0 {
+	if len(interpretersParsed) == 0 {
 		return FipSong{}, fmt.Errorf("couldnt parse the interpreters of current song: %v", bodyParsed.Raw)
 	}
 
-	authors := make([]string, len(authorsParsed))
-	for i, authorParsed := range authorsParsed {
-		authors[i] = authorParsed.String()
+	interpreters := make([]string, len(interpretersParsed))
+	for i, authorParsed := range interpretersParsed {
+		interpreters[i] = authorParsed.String()
 	}
 	return FipSong{
-		Author: authors,
+		Interpreters: interpreters,
 		Name:   bodyParsed.Get("now.song.release.title").String(),
 	}, nil
 
@@ -60,12 +60,10 @@ func (f *defaultFipService) GetCurrentSong(from string) (FipSong, error) {
 
 	if err != nil {
 		return FipSong{}, fmt.Errorf("error while fetching %s: %w", req, err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
+	} else if res.StatusCode != http.StatusOK {
 		return FipSong{}, fmt.Errorf("FIP API return error status %d: %s", res.StatusCode, req)
 	}
+	defer res.Body.Close()
 
 	currentSong, err := buildSongFromFipAPI(res.Body)
 	if err != nil {

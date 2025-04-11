@@ -6,7 +6,7 @@ import (
 )
 
 func SetupRoutes(server *gin.Engine, cfg *Config) {
-	fipService := NewFipService(cfg.FIPApiURL)
+	FipContextService := NewFipContextService(cfg.FIPApiURL, cfg.WikiApiURL)
 
 	server.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -16,7 +16,7 @@ func SetupRoutes(server *gin.Engine, cfg *Config) {
 	server.GET("/current", func(ctx *gin.Context) {
 		from := ctx.Query("from")
 
-		song, err := fipService.GetCurrentSong(from)
+		song, err := FipContextService.Current(from)
 
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, err)
