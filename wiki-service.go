@@ -74,7 +74,8 @@ func (w defaultWikiService) GetArtistPageByName(name string) (string, error) {
 func safeSPARQLRessourceName(name string) string {
 	uriCompliantName := strings.ReplaceAll(name, " ", "_")
 
-	reg := regexp.MustCompile(`[^a-zA-Z0-9_(),.-]`)
+	// handle accented letters
+	reg, _ := regexp.Compile(`[^A-Za-zÀ-ÖØ-öø-ÿ0-9_(),.-]`)
 	sanitized := reg.ReplaceAllString(uriCompliantName, "")
 
 	// Ensure there are no SPARQL-specific characters that could change query meaning

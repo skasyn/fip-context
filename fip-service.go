@@ -11,7 +11,7 @@ import (
 type FipSong struct {
 	Interpreters []string
 	Name         string
-	Genres []string
+	Genres       []string
 }
 
 type FipService interface {
@@ -56,7 +56,6 @@ func buildSongFromFipAPI(res io.ReadCloser) (FipSong, error) {
 
 }
 
-// FIP API returns character such as "é" as "e", meaning that search through wikipedia will not work
 func (f *defaultFipService) GetCurrentSong(from string) (FipSong, error) {
 	req := buildRequest(from, f.FIPApiURL)
 	res, err := http.Get(req)
