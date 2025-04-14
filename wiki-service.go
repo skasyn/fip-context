@@ -3,18 +3,24 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"regexp"
 	"strings"
+	"time"
+
+	"github.com/knakk/sparql"
 	"github.com/tidwall/gjson"
 )
 
 type WikiService interface {
-	GetArtistByName(name string) (string, error)
+	GetArtistPageByName(name string) (string, error)
 	GetGenresByPageTitle(pageTitle string) ([]string, error)
 }
 
 type defaultWikiService struct {
-	WikiApiURL string
+	WikiApiURL  string
+	DbpediaRepo *sparql.Repo
 }
 
 // https://en.wikipedia.org/w/api.php?action=opensearch
@@ -45,7 +51,8 @@ func parseArtistPageTitleFromWikiAPI(res io.ReadCloser) (string, error) {
 	return bodyParsed, nil
 }
 
-func (w defaultWikiService) GetArtistByName(name string) (string, error) {
+// http://en.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=content&format=xmlfm&titles=Scary%20Monsters%20and%20Nice%20Sprites&rvsection=0
+func (w defaultWikiService) GetArtistPageByName(name string) (string, error) {
 	req := buildFindNameRequest(name, w.WikiApiURL)
 	res, err := http.Get(req)
 
@@ -63,13 +70,59 @@ func (w defaultWikiService) GetArtistByName(name string) (string, error) {
 	return artistTitlePage, nil
 }
 
-func (w defaultWikiService) GetGenresByPageTitle(name string) ([]string, error) {
-	var res []string
-	return res, nil
+// sanitize name injected in SPARQL query
+func safeSPARQLRessourceName(name string) string {
+	uriCompliantName := strings.ReplaceAll(name, " ", "_")
+
+	reg := regexp.MustCompile(`[^a-zA-Z0-9_(),.-]`)
+	sanitized := reg.ReplaceAllString(uriCompliantName, "")
+
+	// Ensure there are no SPARQL-specific characters that could change query meaning
+	sanitized = strings.ReplaceAll(sanitized, "'", "")
+	sanitized = strings.ReplaceAll(sanitized, "\"", "")
+	sanitized = strings.ReplaceAll(sanitized, "\\", "")
+	sanitized = strings.ReplaceAll(sanitized, "`", "")
+
+	return sanitized
 }
 
-func NewWikiService(wikiApiURL string) WikiService {
-	return defaultWikiService{
-		WikiApiURL: wikiApiURL,
+func (w defaultWikiService) GetGenresByPageTitle(name string) ([]string, error) {
+	safeArtistName := safeSPARQLRessourceName(name)
+	sparqlQuery := fmt.Sprintf(`
+	SELECT ?property ?value WHERE {
+		dbr:%s ?property ?value .
+		FILTER (?property = dbp:genre)
 	}
+	LIMIT 10
+`, safeArtistName)
+
+	res, err := w.DbpediaRepo.Query(sparqlQuery)
+	if err != nil {
+		return []string{}, fmt.Errorf("failed to query dbpedia with %s: %w", safeArtistName, err)
+	}
+
+	genres := make([]string, len(res.Solutions()))
+	for i, binding := range res.Solutions() {
+		genreURI := binding["value"].String()
+		genreSplited := strings.Split(genreURI, `/`)
+		if len(genreSplited) != 0 {
+			genres[i] = genreSplited[len(genreSplited)-1]
+		} else {
+			log.Printf("Couldnt split following URI: %s", genreURI)
+		}
+	}
+	return genres, nil
+}
+
+func NewWikiService(wikiApiURL string, dbpediaSPARQLEndpoint string) (WikiService, error) {
+	sparqlRepo, err := sparql.NewRepo(dbpediaSPARQLEndpoint,
+		sparql.Timeout(time.Second*30),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SPARQL repository: %w", err)
+	}
+	return defaultWikiService{
+		WikiApiURL:  wikiApiURL,
+		DbpediaRepo: sparqlRepo,
+	}, nil
 }

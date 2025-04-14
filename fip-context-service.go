@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 )
 
 type FipContextService interface {
@@ -11,7 +10,7 @@ type FipContextService interface {
 
 type defaultFipContextService struct {
 	WikiService WikiService
-	FipService FipService
+	FipService  FipService
 }
 
 func (f *defaultFipContextService) Current(from string) (FipSong, error) {
@@ -21,19 +20,27 @@ func (f *defaultFipContextService) Current(from string) (FipSong, error) {
 		return FipSong{}, fmt.Errorf("couldnt get current song from FipService: %w", err)
 	}
 
-	log.Printf("fipSong %v", fipSong)
-	artistPageTitle, err := f.WikiService.GetArtistByName(fipSong.Interpreters[0])
+	artistPageTitle, err := f.WikiService.GetArtistPageByName(fipSong.Interpreters[0])
 	if err != nil {
 		return FipSong{}, fmt.Errorf("couldnt get artistPageTitle from WikiService: %w", err)
 	}
-	log.Printf("artistPageTitle: %s", artistPageTitle)
 
+	genres, err := f.WikiService.GetGenresByPageTitle(artistPageTitle)
+	if err != nil {
+		return FipSong{}, fmt.Errorf("couldnt get genres from %s: %w", artistPageTitle, err)
+	}
+	fipSong.Genres = genres
 	return fipSong, nil
 }
 
-func NewFipContextService(fipAPiURL string, wikiApiURL string) FipContextService {
-	return &defaultFipContextService{
-		WikiService: NewWikiService(wikiApiURL),
-		FipService: NewFipService(fipAPiURL),
+func NewFipContextService(fipAPiURL string, wikiApiURL string, dbpediaURL string) (FipContextService, error) {
+	wikiService, err := NewWikiService(wikiApiURL, dbpediaURL)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create wikiService with wikiApiURL %s and dbpediaURL %s: %w", wikiApiURL, dbpediaURL, err)
 	}
+	return &defaultFipContextService{
+		WikiService: wikiService,
+		FipService:  NewFipService(fipAPiURL),
+	}, nil
 }

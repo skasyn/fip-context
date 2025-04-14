@@ -4,19 +4,21 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
 	"github.com/tidwall/gjson"
 )
 
 type FipSong struct {
 	Interpreters []string
-	Name   string
+	Name         string
+	Genres []string
 }
 
 type FipService interface {
 	GetCurrentSong(from string) (FipSong, error)
 }
 
-type defaultFipService struct{
+type defaultFipService struct {
 	FIPApiURL string
 }
 
@@ -40,7 +42,7 @@ func buildSongFromFipAPI(res io.ReadCloser) (FipSong, error) {
 	interpretersParsed := bodyParsed.Get("now.song.interpreters").Array()
 
 	if len(interpretersParsed) == 0 {
-		return FipSong{}, fmt.Errorf("couldnt parse the interpreters of current song: %v", bodyParsed.Raw)
+		return FipSong{}, fmt.Errorf("couldnt parse the interpreters of current song: %v", bodyParsed.String())
 	}
 
 	interpreters := make([]string, len(interpretersParsed))
@@ -49,11 +51,12 @@ func buildSongFromFipAPI(res io.ReadCloser) (FipSong, error) {
 	}
 	return FipSong{
 		Interpreters: interpreters,
-		Name:   bodyParsed.Get("now.song.release.title").String(),
+		Name:         bodyParsed.Get("now.song.release.title").String(),
 	}, nil
 
 }
 
+// FIP API returns character such as "é" as "e", meaning that search through wikipedia will not work
 func (f *defaultFipService) GetCurrentSong(from string) (FipSong, error) {
 	req := buildRequest(from, f.FIPApiURL)
 	res, err := http.Get(req)
