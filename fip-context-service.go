@@ -20,12 +20,13 @@ func (f *defaultFipContextService) Current(from string) (FipSong, error) {
 		return FipSong{}, fmt.Errorf("couldnt get current song from FipService: %w", err)
 	}
 
-	artistPageTitle, err := f.WikiService.GetArtistPageByName(fipSong.Interpreters[0])
+	artistPageTitle, err := f.WikiService.GetArtistPageTitleByName(fipSong.Interpreters[0])
 	if err != nil {
 		return FipSong{}, fmt.Errorf("couldnt get artistPageTitle from WikiService: %w", err)
 	}
 
-	genres, err := f.WikiService.GetGenresByPageTitle(artistPageTitle)
+	artistsPageTitles := []string{artistPageTitle}
+	genres, err := f.WikiService.GetGenresFromArtists(artistsPageTitles)
 	if err != nil {
 		return FipSong{}, fmt.Errorf("couldnt get genres from %s: %w", artistPageTitle, err)
 	}

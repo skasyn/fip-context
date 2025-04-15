@@ -1,12 +1,15 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/knakk/sparql"
@@ -14,8 +17,9 @@ import (
 )
 
 type WikiService interface {
-	GetArtistPageByName(name string) (string, error)
-	GetGenresByPageTitle(pageTitle string) ([]string, error)
+	GetArtistPageTitleByName(name string) (string, error)
+	getGenresByArtistPageTitle(name string) ([]string, error)
+	GetGenresFromArtists(artists []string) ([]string, error)
 }
 
 type defaultWikiService struct {
@@ -52,7 +56,7 @@ func parseArtistPageTitleFromWikiAPI(res io.ReadCloser) (string, error) {
 }
 
 // http://en.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=content&format=xmlfm&titles=Scary%20Monsters%20and%20Nice%20Sprites&rvsection=0
-func (w defaultWikiService) GetArtistPageByName(name string) (string, error) {
+func (w defaultWikiService) GetArtistPageTitleByName(name string) (string, error) {
 	req := buildFindNameRequest(name, w.WikiApiURL)
 	res, err := http.Get(req)
 
@@ -87,7 +91,7 @@ func safeSPARQLRessourceName(name string) string {
 	return sanitized
 }
 
-func (w defaultWikiService) GetGenresByPageTitle(name string) ([]string, error) {
+func (w defaultWikiService) getGenresByArtistPageTitle(name string) ([]string, error) {
 	safeArtistName := safeSPARQLRessourceName(name)
 	sparqlQuery := fmt.Sprintf(`
 	SELECT ?property ?value WHERE {
@@ -101,6 +105,7 @@ func (w defaultWikiService) GetGenresByPageTitle(name string) ([]string, error) 
 	if err != nil {
 		return []string{}, fmt.Errorf("failed to query dbpedia with %s: %w", safeArtistName, err)
 	}
+	fmt.Printf("name: %s | res: %v\n", safeArtistName, res.Solutions())
 
 	genres := make([]string, len(res.Solutions()))
 	for i, binding := range res.Solutions() {
@@ -111,6 +116,57 @@ func (w defaultWikiService) GetGenresByPageTitle(name string) ([]string, error) 
 		} else {
 			log.Printf("Couldnt split following URI: %s", genreURI)
 		}
+	}
+	return slices.DeleteFunc(genres, func(g string) bool {
+		return g == ""
+	}), nil
+}
+
+// Look for the genres of music played by each artist of a given list
+// Genres will only appear once
+// artists[] need to be a list of artist page title on wikipedia (ex: The Beatles -> The_Beatles)
+func (w defaultWikiService) GetGenresFromArtists(artists []string) ([]string, error) {
+	genresMap := make(map[string]bool)
+	var mutex sync.Mutex
+	var wg sync.WaitGroup
+
+	errorChan := make(chan error, len(artists))
+
+	wg.Add(len(artists))
+	for _, artist := range artists {
+		go func(artist string) {
+			defer wg.Done()
+
+			genres, err := w.getGenresByArtistPageTitle(artist)
+
+			if err != nil {
+				errorChan <- fmt.Errorf("error getting genres for %s: %w", artist, err)
+				return
+			}
+
+			// only keep one occurence of each genres
+			mutex.Lock()
+			for _, s := range genres {
+				genresMap[s] = true
+			}
+			mutex.Unlock()
+		}(artist)
+	}
+
+	wg.Wait()
+	close(errorChan)
+
+	genres := make([]string, 0, len(genresMap))
+	for g := range genresMap {
+		genres = append(genres, g)
+	}
+
+	var errorsArray []error
+	for err := range errorChan {
+		errorsArray = append(errorsArray, err)
+	}
+	if len(errorsArray) > 0 {
+		return genres, errors.Join(errorsArray...)
 	}
 	return genres, nil
 }
