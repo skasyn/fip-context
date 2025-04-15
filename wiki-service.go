@@ -17,7 +17,7 @@ import (
 )
 
 type WikiService interface {
-	GetArtistPageTitleByName(name string) (string, error)
+	GetArtistPageTitlesByNames(name []string) ([]string, error)
 	getGenresByArtistPageTitle(name string) ([]string, error)
 	GetGenresFromArtists(artists []string) ([]string, error)
 }
@@ -50,14 +50,14 @@ func parseArtistPageTitleFromWikiAPI(res io.ReadCloser) (string, error) {
 	bodyParsed := gjson.GetBytes(body, "1.0").String() // Get the first element of the second element
 
 	if bodyParsed == "" {
-		return "", fmt.Errorf("couldnt get artist page title from Wiki API: %s", gjson.GetBytes(body, "*").String())
+		return "", errors.New("couldnt get artist page title from Wiki API")
 	}
 	return bodyParsed, nil
 }
 
 // http://en.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=content&format=xmlfm&titles=Scary%20Monsters%20and%20Nice%20Sprites&rvsection=0
-func (w defaultWikiService) GetArtistPageTitleByName(name string) (string, error) {
-	req := buildFindNameRequest(name, w.WikiApiURL)
+func getArtistPageTitleByName(name string, wikiApiUrl string) (string, error) {
+	req := buildFindNameRequest(name, wikiApiUrl)
 	res, err := http.Get(req)
 
 	if err != nil {
@@ -71,16 +71,52 @@ func (w defaultWikiService) GetArtistPageTitleByName(name string) (string, error
 	if err != nil {
 		return "", fmt.Errorf("couldnt parse artist page title from wiki API response: %w", err)
 	}
-	return artistTitlePage, nil
+
+	// Need to make name URL compliant
+	return strings.ReplaceAll(artistTitlePage, " ", "_"), nil
+}
+
+func (w *defaultWikiService) GetArtistPageTitlesByNames(artists []string) ([]string, error) {
+	artistsPageTitles := make([]string, 0, len(artists))
+	var mutex sync.Mutex
+	var wg sync.WaitGroup
+
+	errorChan := make(chan error, len(artists))
+
+	wg.Add(len(artists))
+	for _, artist := range artists {
+		go func(artist string) {
+			defer wg.Done()
+			artistPageTitle, err := getArtistPageTitleByName(artist, w.WikiApiURL)
+
+			if err != nil {
+				errorChan <- fmt.Errorf("error while getting %s page title: %w", artist, err)
+				return
+			}
+			mutex.Lock()
+			artistsPageTitles = append(artistsPageTitles, artistPageTitle)
+			mutex.Unlock()
+
+		}(artist)
+	}
+	wg.Wait()
+	close(errorChan)
+
+	var errorsArray []error
+	for err := range errorChan {
+		errorsArray = append(errorsArray, err)
+	}
+	if len(errorsArray) > 0 {
+		return artistsPageTitles, errors.Join(errorsArray...)
+	}
+	return artistsPageTitles, nil
 }
 
 // sanitize name injected in SPARQL query
 func safeSPARQLRessourceName(name string) string {
-	uriCompliantName := strings.ReplaceAll(name, " ", "_")
-
 	// handle accented letters
 	reg, _ := regexp.Compile(`[^A-Za-zÀ-ÖØ-öø-ÿ0-9_(),.-]`)
-	sanitized := reg.ReplaceAllString(uriCompliantName, "")
+	sanitized := reg.ReplaceAllString(name, "")
 
 	// Ensure there are no SPARQL-specific characters that could change query meaning
 	sanitized = strings.ReplaceAll(sanitized, "'", "")
@@ -91,7 +127,7 @@ func safeSPARQLRessourceName(name string) string {
 	return sanitized
 }
 
-func (w defaultWikiService) getGenresByArtistPageTitle(name string) ([]string, error) {
+func (w *defaultWikiService) getGenresByArtistPageTitle(name string) ([]string, error) {
 	safeArtistName := safeSPARQLRessourceName(name)
 	sparqlQuery := fmt.Sprintf(`
 	SELECT ?property ?value WHERE {
@@ -105,7 +141,6 @@ func (w defaultWikiService) getGenresByArtistPageTitle(name string) ([]string, e
 	if err != nil {
 		return []string{}, fmt.Errorf("failed to query dbpedia with %s: %w", safeArtistName, err)
 	}
-	fmt.Printf("name: %s | res: %v\n", safeArtistName, res.Solutions())
 
 	genres := make([]string, len(res.Solutions()))
 	for i, binding := range res.Solutions() {
@@ -125,7 +160,7 @@ func (w defaultWikiService) getGenresByArtistPageTitle(name string) ([]string, e
 // Look for the genres of music played by each artist of a given list
 // Genres will only appear once
 // artists[] need to be a list of artist page title on wikipedia (ex: The Beatles -> The_Beatles)
-func (w defaultWikiService) GetGenresFromArtists(artists []string) ([]string, error) {
+func (w *defaultWikiService) GetGenresFromArtists(artists []string) ([]string, error) {
 	genresMap := make(map[string]bool)
 	var mutex sync.Mutex
 	var wg sync.WaitGroup
@@ -178,7 +213,7 @@ func NewWikiService(wikiApiURL string, dbpediaSPARQLEndpoint string) (WikiServic
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SPARQL repository: %w", err)
 	}
-	return defaultWikiService{
+	return &defaultWikiService{
 		WikiApiURL:  wikiApiURL,
 		DbpediaRepo: sparqlRepo,
 	}, nil
